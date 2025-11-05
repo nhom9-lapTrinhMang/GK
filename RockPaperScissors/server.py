@@ -56,3 +56,53 @@ while inputs:
                 messageQueue[clientConnection] = queue.Queue()
                 messageQueue[clientConnection].put(status)
                 output.append(clientConnection)
+                else:
+                    print('Server received a message. Adding to messageQueue')
+                    messageQueue[fd].put(data)
+
+                    if fd not in output:
+                        output.append(fd)
+            else:
+                print('A client has disconnected. Cleaning output list and messageQueue')
+
+                if fd in output:
+                    output.remove(fd)
+
+                inputs.remove(fd)
+                del messageQueue[fd]
+
+                fd.close()
+
+                roomCount -= 1
+                try:
+                    if cQ.size() >= 1:
+                        nextClient = cQ.dequeue()
+
+                        inputs.append(nextClient)
+                        status = 'ready'
+                        messageQueue[nextClient] = queue.Queue()
+                        messageQueue[nextClient].put(status)
+                        output.append(nextClient)
+
+                        roomCount += 1
+                except Exception:
+                    pass
+
+    for fd in outputfd:
+        try:
+            if roomCount > 0:
+                message = messageQueue[fd].get_nowait()
+                fd.send(str(message).encode())
+        except queue.Empty:
+            output.remove(fd)
+
+    for fd in exceptfd:
+        inputs.remove(fd)
+        del messageQueue[fd]
+
+        if fd in output:
+            output.remove(fd)
+
+        fd.close()
+
+serverSocket.close()
