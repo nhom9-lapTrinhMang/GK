@@ -1,3 +1,6 @@
+import socket
+import sys
+
 def getinput():
     options = ('R', 'P', 'S')
     while True:
@@ -6,9 +9,10 @@ def getinput():
             return clientInput
 
 def usage():
-    print('USAGE: python client.py <ADDRESS> <PORT> <BUFFERSIZE>')
-    exit(0)
+        print('USAGE: python client.py <ADDRESS> <PORT> <BUFFERSIZE>')
+        exit(0)
 
+# --- Argument Handling ---
 if len(sys.argv) > 1:
     if sys.argv[1].lower() in ('-h', '--help'):
         usage()
@@ -31,7 +35,7 @@ if len(sys.argv) > 1:
             bufferSize = 1024
 else:
     usage()
-#  Logic game client 
+
 target = (address, port)
 
 clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
