@@ -1,4 +1,8 @@
-#Cài đặt quản lý hàng đợi 
+import queue
+import socket
+import select
+import sys
+#xử lý hàng đợi 
 class Qu:
     def __init__(self):
         self.items = []
@@ -14,21 +18,62 @@ class Qu:
 
     def size(self):
         return len(self.items)
-# === Common Imports ===
-import queue
-import socket
-import select
-import sys
+#khỏi tạo server và xử lý tham số 
+def usage():
+    print('USAGE: python server.py <ADDRESS> <PORT> <MAXQUEUE> <BUFFERSIZE>')
+    exit(0)
 
-# Base server file for Rock-Paper-Scissors project
-# Logic will be implemented in feature branches
+address = '127.0.0.1'
 
-def main():
-    pass  # TODO: Implement server logic in feature branches
+if len(sys.argv) > 1:
+    if sys.argv[1].lower() in ('-h', '--help'):
+        usage()
+    else:
+        address = sys.argv[1]
+else:
+    usage()
 
-if __name__ == "__main__":
-    main()
-#Xử lý vòng lặp chính (select & I/O) (feature/socket-event-loop)
+maxQueue = 2
+bufferSize = 1024
+
+if len(sys.argv) > 2:
+    if sys.argv[2].isdigit():
+        port = int(sys.argv[2])
+        if port < 1000 or port > 65535:
+            usage()
+else:
+    usage()
+
+if len(sys.argv) > 3:
+    if sys.argv[3].isdigit():
+        maxQueue = int(sys.argv[3])
+        if maxQueue < 1 or maxQueue > 999:
+            usage()
+
+if len(sys.argv) > 4:
+    if sys.argv[4].isdigit():
+        bufferSize = int(sys.argv[4])
+        if bufferSize < 32 or bufferSize > 99999:
+            usage()
+#Quản lý phòng và kết nối client
+roomCount = 0
+cQ = Qu()
+clientQueue = {}
+
+serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+serverSocket.bind((address, port))
+serverSocket.listen(5)
+
+inputs = [serverSocket]
+output = []
+messageQueue = {}
+
+startGame = False
+playerOne = ''
+playerTwo = ''
+winner = -1
+wait = None
+#xử lý vòng lặp chính
 while inputs:
     inputfd, outputfd, exceptfd = select.select(inputs, output, inputs)
 
@@ -56,6 +101,64 @@ while inputs:
                 messageQueue[clientConnection] = queue.Queue()
                 messageQueue[clientConnection].put(status)
                 output.append(clientConnection)
+#logi trò chơi 
+        else:
+            data = fd.recv(bufferSize).decode()
+
+            if data:
+
+                if startGame:
+                    if '1' in data:
+                        playerOne = data[:1]
+                        if wait is None:
+                            wait = fd
+                    else:
+                        playerTwo = data[:1]
+                        if wait is None:
+                            wait = fd
+
+                    if playerOne and playerTwo:
+                        if playerOne == 'R' and playerTwo == 'R': winner = 0
+                        elif playerOne == 'R' and playerTwo == 'P': winner = 2
+                        elif playerOne == 'R' and playerTwo == 'S': winner = 1
+                        elif playerOne == 'P' and playerTwo == 'R': winner = 1
+                        elif playerOne == 'P' and playerTwo == 'P': winner = 0
+                        elif playerOne == 'P' and playerTwo == 'S': winner = 2
+                        elif playerOne == 'S' and playerTwo == 'R': winner = 2
+                        elif playerOne == 'S' and playerTwo == 'P': winner = 1
+                        elif playerOne == 'S' and playerTwo == 'S': winner = 0
+                    else:
+                        messageQueue[fd].put('wait')
+                        if fd not in output:
+                            output.append(fd)
+                else:
+                    messageQueue[fd].put('wait')
+                    if fd not in output:
+                        output.append(fd)
+
+                    if '1' in data:
+                        playerOne = data[:1]
+                        if wait is None:
+                            wait = fd
+                    else:
+                        playerTwo = data[:1]
+                        if wait is None:
+                            wait = fd
+
+                if winner != -1:
+                    messageQueue[fd].put(winner)
+                    if fd not in output:
+                        output.append(fd)
+
+                    wait.send(str(winner).encode())
+
+                    wait = None
+                    startGame = False
+                    playerOne = ''
+                    playerTwo = ''
+                    winner = -1
+                    roomCount = 2
+
                 else:
                     print('Server received a message. Adding to messageQueue')
                     messageQueue[fd].put(data)
