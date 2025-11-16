@@ -1,89 +1,128 @@
-
+import streamlit as st
 import socket
 import sys
-# xử lý tham số
-def getinput():
-    options = ('R', 'P', 'S')
-    while True:
-        clientInput = input("Enter R, P, or S: ").upper()
-        if clientInput in options:
-            return clientInput
+import time
 
-def usage():
-        print('USAGE: python client.py <ADDRESS> <PORT> <BUFFERSIZE>')
-        exit(0)
+st.set_page_config(page_title="GROUP 9", layout="centered")
+st.title("GROUP 9")
 
-if len(sys.argv) > 1:
-    if sys.argv[1].lower() in ('-h', '--help'):
-        usage()
-    else:
-        if len(sys.argv) > 2:
-            address = sys.argv[1]
-            if sys.argv[2].isdigit():
-                port = int(sys.argv[2])
-                if port < 1000 or port > 65535:
-                    usage()
+if 'status_message' not in st.session_state:
+    st.session_state.status_message = "Chưa kết nối. Vui lòng nhập thông tin máy chủ."
+if 'result_message' not in st.session_state:
+    st.session_state.result_message = ""
+if 'player_id' not in st.session_state:
+    st.session_state.player_id = None
+
+
+def connect_and_play(move: str, address: str, port: int, buffer_size: int = 1024):
+    """Xử lý toàn bộ logic kết nối socket, gửi move và nhận kết quả."""
+    st.session_state.status_message = f"Đang gửi nước đi: {move}..."
+    st.session_state.result_message = ""
+    st.session_state.player_id = None 
+
+    try:
+        
+        clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        clientSocket.connect((address, port))
+
+
+        status = clientSocket.recv(buffer_size).decode()
+
+
+        if 'queue' in status:
+            st.session_state.status_message = "Phòng đã đầy, bạn đã được thêm vào hàng đợi. Vui lòng thử lại sau."
+            clientSocket.close()
+            return
+        
+        if '0' in status:
+            st.session_state.player_id = '1'
+        elif '1' in status:
+            st.session_state.player_id = '2'
         else:
-            usage()
+             
+            st.session_state.status_message = f"Kết nối thành công. Bạn là Người chơi {st.session_state.player_id if st.session_state.player_id else 'không xác định'}. Đang gửi nước đi."
+        
+        player = st.session_state.player_id
+        if not player:
+            st.session_state.status_message = f"Lỗi: Không thể xác định ID người chơi từ máy chủ ({status})."
+            clientSocket.close()
+            return
 
-        if len(sys.argv) > 3:
-            if sys.argv[3].isdigit():
-                bufferSize = int(sys.argv[3])
-                if bufferSize < 32 or bufferSize > 99999:
-                    usage()
-        else:
-            bufferSize = 1024
-else:
-    usage()
-#xử lý logic game client
-target = (address, port)
-
-clientSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-clientSocket.connect(target)
-
-status = clientSocket.recv(bufferSize).decode()
-player = '-1'
-
-if '0' in status:
-    player = '1'
-elif '1' in status:
-    player = '2'
-
-print(status)
-
-if 'queue' in status:
-    while status == 'queue':
-        print('The room is full, you have been added to the queue.')
-        status = clientSocket.recv(bufferSize).decode()
-    print(status)
-    print('You are now connected!')
-
-isPlaying = True
-
-while isPlaying:
-    clientInput = getinput()
-
-    if clientInput:
-        clientSocket.send((clientInput + str(player)).encode())
-        result = clientSocket.recv(bufferSize).decode()
+        clientSocket.send((move + str(player)).encode())
+        
+        result = clientSocket.recv(buffer_size).decode()
 
         if 'wait' in result:
-            print('Waiting for your opponent!')
-            result = clientSocket.recv(bufferSize).decode()
-            result = clientSocket.recv(bufferSize).decode()
+            st.session_state.status_message = "Đang chờ đối thủ. Vui lòng nhấp lại nút move của bạn một lần nữa sau khi đối thủ chơi (hoặc sau vài giây)."
+            try:
+                clientSocket.settimeout(2.0)
+                final_result = clientSocket.recv(buffer_size).decode()
+                try:
+                    final_result_2 = clientSocket.recv(buffer_size).decode()
+                    if final_result_2 and final_result_2.isdigit():
+                        final_result = final_result_2
+                except socket.timeout:
+                    pass
 
-        if '0' in result:
-            print('The match was a draw!')
-        elif '1' in result and player == '1':
-            print('You won!')
-        elif '1' in result and player == '2':
-            print('You lost!')
-        elif '2' in result and player == '1':
-            print('You lost!')
-        elif '2' in result and player == '2':
-            print('You Won!')
+                result = final_result
+                st.session_state.status_message = "Đã nhận kết quả cuối cùng."
 
-        print('Disconnecting to make room for other players. Thank you for playing SPEED-RPS!')
+            except socket.timeout:
+                st.session_state.result_message = "Đã gửi nước đi, nhưng đối thủ chưa chơi. Vui lòng thử lại sau."
+                clientSocket.close()
+                return
+            except Exception as e:
+                st.session_state.status_message = f"Lỗi khi chờ kết quả: {e}"
+                clientSocket.close()
+                return
 
-        clientSocket.close()
-        isPlaying = False
+        result_int = int(result)
+
+        if result_int == 0:
+            st.session_state.result_message = "Kết quả: 🤝 HÒA!"
+        elif (result_int == 1 and player == '1') or (result_int == 2 and player == '2'):
+            st.session_state.result_message = "Kết quả: 🎉 BẠN THẮNG!"
+        else:
+            st.session_state.result_message = "Kết quả: 😢 BẠN THUA!"
+        
+        st.session_state.status_message = "Đã ngắt kết nối. Sẵn sàng cho ván mới!"
+
+    except ConnectionRefusedError:
+        st.session_state.status_message = "Kết nối thất bại. Vui lòng kiểm tra địa chỉ và cổng máy chủ."
+        st.session_state.result_message = ""
+    except Exception as e:
+        st.session_state.status_message = f"Lỗi không xác định: {e}"
+        st.session_state.result_message = ""
+    finally:
+        try:
+            clientSocket.close()
+        except NameError:
+            pass 
+
+st.sidebar.header("Cấu hình Máy chủ")
+server_address = st.sidebar.text_input("Địa chỉ Máy chủ (Server Address)", value="127.0.0.1")
+server_port = st.sidebar.number_input("Cổng (Port)", value=8888, min_value=1000, max_value=65535, step=1)
+buffer_size = 1024
+
+
+st.header("Chọn nước đi của bạn")
+st.write("Nhấp vào một nút để kết nối, chơi một ván, và nhận kết quả.")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    if st.button("✊ Búa (R)", use_container_width=True, help="Rock"):
+        connect_and_play('R', server_address, server_port, buffer_size)
+with col2:
+    if st.button("✋ Bao (P)", use_container_width=True, help="Paper"):
+        connect_and_play('P', server_address, server_port, buffer_size)
+with col3:
+    if st.button("✌️ Kéo (S)", use_container_width=True, help="Scissors"):
+        connect_and_play('S', server_address, server_port, buffer_size)
+
+st.divider()
+
+st.info(f"**Trạng thái Kết nối:** {st.session_state.status_message}")
+
+if st.session_state.result_message:
+    st.markdown(f"## {st.session_state.result_message}")
