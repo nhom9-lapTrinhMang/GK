@@ -22,7 +22,7 @@ Server xử lý kết quả và phản hồi thắng/thua/hòa cho từng ngư�
 Mở terminal tại thư mục dự án và chạy:
 
 ```bash
-python server.py "ip máy bạn"
+python server.py "ip"
 ```
 
 Server phải chạy **trước** khi các client kết nối.
